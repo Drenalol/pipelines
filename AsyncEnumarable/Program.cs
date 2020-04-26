@@ -46,8 +46,8 @@ namespace AsyncEnumarable
 
         private static async Task Read(PipeReader pipeReader)
         {
-            var headerComplete = false;
-            uint header = 0;
+            var lengthComplete = false;
+            uint length = 0;
             var bodyComplete = false;
             string body = null;
 
@@ -55,24 +55,24 @@ namespace AsyncEnumarable
             {
                 var read = await pipeReader.ReadAsync();
 
-                if (!headerComplete && read.Buffer.Length >= 4)
+                if (!lengthComplete && read.Buffer.Length >= 4)
                 {
                     var headerRawData = read.Buffer.Slice(0, 4);
-                    header = BitConverter.ToUInt32(headerRawData.FirstSpan);
+                    length = BitConverter.ToUInt32(headerRawData.FirstSpan);
                     pipeReader.AdvanceTo(read.Buffer.GetPosition(4));
-                    headerComplete = true;
+                    lengthComplete = true;
                 }
-                else if (headerComplete && read.Buffer.Length >= header)
+                else if (lengthComplete && read.Buffer.Length >= length)
                 {
-                    var bodyRawData = read.Buffer.Slice(0, header);
+                    var bodyRawData = read.Buffer.Slice(0, length);
                     body = Encoding.UTF8.GetString(bodyRawData.FirstSpan);
-                    pipeReader.AdvanceTo(read.Buffer.GetPosition(header));
+                    pipeReader.AdvanceTo(read.Buffer.GetPosition(length));
                     bodyComplete = true;
                 }
-                else if (headerComplete)
+                else if (lengthComplete)
                 {
                     // Need more data, so we move forward cursor
-                    pipeReader.AdvanceTo(read.Buffer.Start);
+                    pipeReader.AdvanceTo(read.Buffer.Start, read.Buffer.GetPosition(read.Buffer.Length));
                 }
                 else
                 {
@@ -80,14 +80,14 @@ namespace AsyncEnumarable
                     pipeReader.AdvanceTo(read.Buffer.GetPosition(1));
                 }
 
-                if (headerComplete && bodyComplete)
-                {
-                    var model = JsonConvert.DeserializeObject<Model>(body);
-                    Console.WriteLine($"Got message: {body}, length: {header}, deserialize: {(model != null ? "OK" : "Failed")}");
+                if (!lengthComplete || !bodyComplete)
+                    continue;
+                
+                var model = JsonConvert.DeserializeObject<Model>(body);
+                Console.WriteLine($"Got message: {body}, length: {length}, deserialize: {(model != null ? "OK" : "Failed")}");
                     
-                    headerComplete = false;
-                    bodyComplete = false;
-                }
+                lengthComplete = false;
+                bodyComplete = false;
             }
         }
 
